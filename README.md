@@ -56,7 +56,7 @@ Serverless Orchestrator is a Python-based platform designed to orchestrate and m
 
 7. **Set up cron jobs or webhooks:**
 
-   - For cron jobs, follow Vercel's documentation on [Scheduled Functions](https://vercel.com/docs/concepts/functions/scheduled-functions).
+   - For cron jobs, follow Vercel's documentation on [Scheduled Functions](https://vercel.com/docs/cron-jobs).
    - For webhooks, use the provided function URL as the endpoint for your webhook triggers.
 
 ## License
