@@ -83,7 +83,7 @@ def insert_data(
             updated_pages.append(item["id"])
 
         try:
-            # supabase.table(table_name).upsert(data_batch).execute()
+            supabase.table(table_name).upsert(data_batch).execute()
             logger.info(
                 f"Inserted {len(data_batch)} items into Supabase {table_name} table."
             )
@@ -91,7 +91,7 @@ def insert_data(
             logger.error(f"Error inserting data into Supabase: {e}")
             continue
 
-        # update_notion_status(notion, updated_pages)
+        update_notion_status(notion, updated_pages)
         total_processed += len(updated_pages)
 
         if response["has_more"]:
