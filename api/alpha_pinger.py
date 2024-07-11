@@ -3,6 +3,7 @@ import logging
 import json
 from http.server import BaseHTTPRequestHandler
 from typing import Optional
+from utils.notion_supabase_sync import main as sync_data
 
 logging.basicConfig(level=logging.INFO)
 
@@ -33,13 +34,24 @@ class handler(BaseHTTPRequestHandler):
         website_pinger = AlphaPinger("https://alpha.gloryolusola.com")
         website_status = website_pinger.get_website_status()
 
+        # Run Notion to Supabase sync
+        try:
+            sync_data()
+            sync_status = "success"
+        except Exception as e:
+            logging.error(f"Error syncing data: {e}")
+            sync_status = "error"
+
         self.send_response(200)
         self.send_header("Content-type", "application/json")
         self.end_headers()
 
-        if website_status:
-            response_data = {"status": "success", "code": website_status}
-        else:
-            response_data = {"status": "error", "message": "Failed to ping website"}
+        response_data = {
+            "website_ping": {
+                "status": "success" if website_status else "error",
+                "code": website_status if website_status else None,
+            },
+            "notion_supabase_sync": {"status": sync_status},
+        }
 
         self.wfile.write(json.dumps(response_data).encode())
