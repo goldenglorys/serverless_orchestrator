@@ -4,9 +4,14 @@ import json
 from http.server import BaseHTTPRequestHandler
 from typing import Optional
 from utils.notion_supabase_sync import main as sync_data
+import os
+from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO)
 
+# Load environment variables
+load_dotenv()
+ALPHA_URL = os.getenv("ALPHA_URL")
 
 class AlphaPinger:
     """Class to ping a website and check its status."""
@@ -31,7 +36,7 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         """Handle GET requests."""
-        website_pinger = AlphaPinger("https://alpha.gloryolusola.com")
+        website_pinger = AlphaPinger(ALPHA_URL)
         website_status = website_pinger.get_website_status()
 
         # Run Notion to Supabase sync
