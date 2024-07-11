@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/alpha_pinger",
+      "schedule": "0 1 * * *"
+    }
+  ]
+}
