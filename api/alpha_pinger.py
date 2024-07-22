@@ -3,7 +3,7 @@ import logging
 import json
 from http.server import BaseHTTPRequestHandler
 from typing import Optional
-from utils.notion_supabase_sync import main as sync_data
+from utils.notion_supabase_sync import main as sync_data, ping_supabase
 import os
 from dotenv import load_dotenv
 
@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Load environment variables
 load_dotenv()
-ALPHA_URL = os.getenv("ALPHA_URL")
+
 
 class AlphaPinger:
     """Class to ping a website and check its status."""
@@ -36,8 +36,25 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         """Handle GET requests."""
-        website_pinger = AlphaPinger(ALPHA_URL)
-        website_status = website_pinger.get_website_status()
+
+        # Ping Supabase tables
+        try:
+            papers_ping = ping_supabase("papers")
+            papers_status = "success"
+            papers_fetched = len(papers_ping)
+        except Exception as e:
+            logging.error(f"Error pinging Supabase papers table: {e}")
+            papers_status = "error"
+            papers_fetched = None
+
+        try:
+            links_ping = ping_supabase("links")
+            links_status = "success"
+            links_fetched = len(links_ping)
+        except Exception as e:
+            logging.error(f"Error pinging Supabase links table: {e}")
+            links_status = "error"
+            links_fetched = None
 
         # Run Notion to Supabase sync
         try:
@@ -52,9 +69,15 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
 
         response_data = {
-            "website_ping": {
-                "status": "success" if website_status else "error",
-                "code": website_status if website_status else None,
+            "supabase_ping": {
+                "papers_table": {
+                    "status": papers_status,
+                    "records_fetched": papers_fetched,
+                },
+                "links_table": {
+                    "status": links_status,
+                    "records_fetched": links_fetched,
+                },
             },
             "notion_supabase_sync": {"status": sync_status},
         }

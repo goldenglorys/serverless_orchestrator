@@ -18,7 +18,7 @@ Usage:
 
 import logging
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from dotenv import load_dotenv
 from notion_client import Client
@@ -42,6 +42,24 @@ LINKS_DATABASE_ID = os.getenv("LINKS_DATABASE_ID")
 # Initialize clients
 supabase: SupabaseClient = create_client(SUPABASE_URL, SUPABASE_KEY)
 notion = Client(auth=NOTION_TOKEN)
+
+
+def ping_supabase(table_name: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    Ping the Supabase instance by fetching 10 records from the specified table.
+
+    Args:
+        table_name (str): The name of the Supabase table to fetch data from.
+
+    Returns:
+        Optional[List[Dict[str, Any]]]: A list of up to 10 records from the specified table, or None if an error occurs.
+    """
+    try:
+        response = supabase.table(table_name).select("*").limit(10).execute()
+        return response.data
+    except Exception as e:
+        logger.error(f"Error pinging Supabase table {table_name}: {e}")
+        return None
 
 
 def insert_data(
