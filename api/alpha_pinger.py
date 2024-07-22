@@ -4,7 +4,7 @@ import json
 from http.server import BaseHTTPRequestHandler
 from typing import Optional
 from utils.notion_supabase_sync import main as sync_data, ping_supabase
-import os
+from utils.notify import send_telegram_message
 from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO)
@@ -60,9 +60,15 @@ class handler(BaseHTTPRequestHandler):
         try:
             sync_data()
             sync_status = "success"
+            send_telegram_message(
+                "The Notion to Supabase sync job completed successfully."
+            )
         except Exception as e:
             logging.error(f"Error syncing data: {e}")
             sync_status = "error"
+            send_telegram_message(
+                "There was an error in the Notion to Supabase sync job."
+            )
 
         self.send_response(200)
         self.send_header("Content-type", "application/json")
