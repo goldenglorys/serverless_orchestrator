@@ -133,3 +133,4 @@ auto_echo.json
 cj.json
 test.txt
 .vercel
+.DS_Store

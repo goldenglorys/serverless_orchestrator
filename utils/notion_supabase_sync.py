@@ -81,7 +81,12 @@ def insert_data(
         try:
             response = notion.databases.query(
                 database_id=database_id,
-                filter={"property": "Status", "status": {"equals": "New"}},
+                filter={
+                    "or": [
+                        {"property": "Status", "status": {"equals": "New"}},
+                        {"property": "Status", "status": {"is_empty": True}},
+                    ]
+                },
                 start_cursor=start_cursor,
             )
         except Exception as e:
