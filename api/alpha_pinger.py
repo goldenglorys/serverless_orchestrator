@@ -3,7 +3,7 @@ import logging
 import json
 from http.server import BaseHTTPRequestHandler
 from typing import Optional
-from utils.notion_supabase_sync import main as sync_data, ping_supabase
+from utils.notion_supabase_sync import main as sync_data, ping_supabase, ping_second_supabase
 from utils.notify import send_telegram_message
 from dotenv import load_dotenv
 
@@ -56,6 +56,15 @@ class handler(BaseHTTPRequestHandler):
             links_status = "error"
             links_fetched = None
 
+        try:
+            second_supabase_ping = ping_second_supabase("users")
+            second_supabase_status = "success"
+            second_supabase_fetched = len(second_supabase_ping)
+        except Exception as e:
+            logging.error(f"Error pinging second Supabase table: {e}")
+            second_supabase_status = "error"
+            second_supabase_fetched = None
+
         # Run Notion to Supabase sync
         try:
             sync_data()
@@ -76,14 +85,20 @@ class handler(BaseHTTPRequestHandler):
 
         response_data = {
             "supabase_ping": {
-                "papers_table": {
-                    "status": papers_status,
-                    "records_fetched": papers_fetched,
+                "account_1": {
+                    "papers_table": {
+                        "status": papers_status,
+                        "records_fetched": papers_fetched,
+                    },
+                    "links_table": {
+                        "status": links_status,
+                        "records_fetched": links_fetched,
+                    },
                 },
-                "links_table": {
-                    "status": links_status,
-                    "records_fetched": links_fetched,
-                },
+                "account_2": {
+                    "status": second_supabase_status,
+                    "records_fetched": second_supabase_fetched,
+                }
             },
             "notion_supabase_sync": {"status": sync_status},
         }
