@@ -39,9 +39,14 @@ NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 PAPERS_DATABASE_ID = os.getenv("PAPERS_DATABASE_ID")
 LINKS_DATABASE_ID = os.getenv("LINKS_DATABASE_ID")
 
+SECOND_SUPABASE_URL = os.getenv("SECOND_SUPABASE_URL")
+SECOND_SUPABASE_KEY = os.getenv("SECOND_SUPABASE_KEY")
+
 # Initialize clients
 supabase: SupabaseClient = create_client(SUPABASE_URL, SUPABASE_KEY)
 notion = Client(auth=NOTION_TOKEN)
+
+second_supabase: SupabaseClient = create_client(SECOND_SUPABASE_URL, SECOND_SUPABASE_KEY)
 
 
 def ping_supabase(table_name: str) -> Optional[List[Dict[str, Any]]]:
@@ -61,7 +66,14 @@ def ping_supabase(table_name: str) -> Optional[List[Dict[str, Any]]]:
         logger.error(f"Error pinging Supabase table {table_name}: {e}")
         return None
 
-
+def ping_second_supabase(table_name: str) -> Optional[List[Dict[str, Any]]]:
+    try:
+        response = second_supabase.table(table_name).select("*").limit(10).execute()
+        return response.data
+    except Exception as e:
+        logger.error(f"Error pinging second Supabase table {table_name}: {e}")
+        return None
+        
 def insert_data(
     database_id: str, table_name: str, notion: Client, supabase: SupabaseClient
 ) -> None:
