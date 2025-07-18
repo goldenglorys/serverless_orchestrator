@@ -38,6 +38,8 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 PAPERS_DATABASE_ID = os.getenv("PAPERS_DATABASE_ID")
 LINKS_DATABASE_ID = os.getenv("LINKS_DATABASE_ID")
+ARCHIVE_PAPERS_DATABASE_ID = os.getenv("ARCHIVE_PAPERS_DATABASE_ID")
+ARCHIVE_LINKS_DATABASE_ID = os.getenv("ARCHIVE_LINKS_DATABASE_ID")
 
 SECOND_SUPABASE_URL = os.getenv("SECOND_SUPABASE_URL")
 SECOND_SUPABASE_KEY = os.getenv("SECOND_SUPABASE_KEY")
@@ -93,16 +95,11 @@ def insert_data(
         try:
             response = notion.databases.query(
                 database_id=database_id,
-                filter={
-                    "or": [
-                        {"property": "Status", "status": {"equals": "New"}},
-                        {"property": "Status", "status": {"is_empty": True}},
-                    ]
-                },
+                filter={"property": "Status", "status": {"equals": "New"}},
                 start_cursor=start_cursor,
             )
         except Exception as e:
-            logger.error(f"Error querying Notion database: {e}")
+            logger.error(f"Error querying Notion database for new items: {e}")
             break
 
         if not response["results"]:
@@ -110,32 +107,28 @@ def insert_data(
             break
 
         data_batch = []
-        updated_pages = []
+        page_ids_to_update = []
 
-        for item in tqdm(response["results"], desc=f"Processing {table_name}"):
+        for item in tqdm(response["results"], desc=f"Processing new {table_name}"):
             data = process_notion_item(item, table_name)
             data_batch.append(data)
-            updated_pages.append(item["id"])
+            page_ids_to_update.append(item["id"])
 
         try:
             supabase.table(table_name).upsert(data_batch).execute()
-            logger.info(
-                f"Inserted {len(data_batch)} items into Supabase {table_name} table."
-            )
+            logger.info(f"Inserted {len(data_batch)} items into Supabase {table_name} table.")
+            update_notion_status_to_uploaded(notion, page_ids_to_update)
+            total_processed += len(page_ids_to_update)
         except Exception as e:
-            logger.error(f"Error inserting data into Supabase: {e}")
+            logger.error(f"Error inserting data into Supabase or updating Notion: {e}")
             continue
 
-        update_notion_status(notion, updated_pages)
-        total_processed += len(updated_pages)
-
-        if response["has_more"]:
-            start_cursor = response["next_cursor"]
+        if response.get("has_more"):
+            start_cursor = response.get("next_cursor")
         else:
             break
 
-    logger.info(f"Total items processed for {table_name}: {total_processed}")
-
+    logger.info(f"Total new items processed for {table_name}: {total_processed}")
 
 def process_notion_item(item: Dict[str, Any], table_name: str) -> Dict[str, Any]:
     """
@@ -148,16 +141,18 @@ def process_notion_item(item: Dict[str, Any], table_name: str) -> Dict[str, Any]
     Returns:
         Dict[str, Any]: The processed data ready for insertion into Supabase.
     """
+    properties = item["properties"]
+    
     data = {
-        "title": item["properties"]["Title"]["title"][0]["plain_text"],
-        "url": item["properties"]["URL"]["url"],
-        "notion_timestamp": item["created_time"],
+        "title": properties.get("Title", {}).get("title", [{}])[0].get("plain_text", ""),
+        "url": properties.get("URL", {}).get("url"),
+        "notion_timestamp": item.get("created_time"),
     }
-
+    
     if table_name == "papers":
-        data["date"] = item["properties"]["Date"]["date"]["start"]
-        data["authors"] = item["properties"]["Authors"]["rich_text"][0]["plain_text"]
-
+        data["date"] = properties.get("Date", {}).get("date", {}).get("start")
+        data["authors"] = properties.get("Authors", {}).get("rich_text", [{}])[0].get("plain_text", "")
+        
     return data
 
 
@@ -174,18 +169,64 @@ def update_notion_status(notion: Client, page_ids: List[str]) -> None:
             notion.pages.update(
                 page_id=page_id, properties={"Status": {"status": {"name": "Uploaded"}}}
             )
+            logger.info(f"Updated status for Notion page {page_id} to 'Uploaded'.")
         except Exception as e:
-            logger.error(f"Error updating Notion page {page_id}: {e}")
+            logger.error(f"Error updating Notion page {page_id} status: {e}")
+            
 
+def archive_uploaded_items(source_db_id: str, archive_db_id: str) -> None:
+    if not archive_db_id:
+        logger.warning(f"Archive database ID not set for source {source_db_id}. Skipping archival.")
+        return
+
+    logger.info(f"Checking for 'Uploaded' items to archive from {source_db_id}")
+    start_cursor = None
+    while True:
+        try:
+            response = notion.databases.query(
+                database_id=source_db_id,
+                filter={"property": "Status", "status": {"equals": "Uploaded"}},
+                start_cursor=start_cursor
+            )
+        except Exception as e:
+            logger.error(f"Error querying Notion for 'Uploaded' items: {e}")
+            break
+
+        if not response["results"]:
+            logger.info(f"No 'Uploaded' items to archive in {source_db_id}.")
+            break
+
+        for page in tqdm(response["results"], desc=f"Archiving items from {source_db_id}"):
+            try:
+                # Re-create the properties for the new page, setting status to "Archived"
+                new_page_properties = {k: v for k, v in page["properties"].items()}
+                new_page_properties["Status"] = {"status": {"name": "Archived"}}
+
+                notion.pages.create(
+                    parent={"database_id": archive_db_id},
+                    properties=new_page_properties,
+                )
+                # Archive (delete) the original page
+                notion.pages.update(page_id=page["id"], archived=True)
+                logger.info(f"Archived and deleted original page {page['id']}.")
+            except Exception as e:
+                logger.error(f"Failed to archive page {page['id']}: {e}")
+                continue
+
+        if response.get("has_more"):
+            start_cursor = response.get("next_cursor")
+        else:
+            break
+            
 
 def main() -> None:
     """Main function to run the sync process."""
     logger.info("Starting Notion to Supabase sync process")
-
-    logger.info("Syncing papers database")
     insert_data(PAPERS_DATABASE_ID, "papers", notion, supabase)
-
-    logger.info("Syncing links database")
     insert_data(LINKS_DATABASE_ID, "links", notion, supabase)
-
     logger.info("Sync process completed")
+
+    logger.info("Starting Notion archival process")
+    archive_uploaded_items(PAPERS_DATABASE_ID, ARCHIVE_PAPERS_DATABASE_ID)
+    archive_uploaded_items(LINKS_DATABASE_ID, ARCHIVE_LINKS_DATABASE_ID)
+    logger.info("Archival process completed")
