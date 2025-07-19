@@ -181,6 +181,10 @@ def archive_uploaded_items(source_db_id: str, archive_db_id: str) -> None:
 
     logger.info(f"Checking for 'Uploaded' items to archive from {source_db_id}")
     start_cursor = None
+    read_only_property_types = [
+        "created_by", "created_time", "last_edited_by", "last_edited_time", "formula", "rollup"
+    ]
+
     while True:
         try:
             response = notion.databases.query(
@@ -198,15 +202,17 @@ def archive_uploaded_items(source_db_id: str, archive_db_id: str) -> None:
 
         for page in tqdm(response["results"], desc=f"Archiving items from {source_db_id}"):
             try:
-                # Re-create the properties for the new page, setting status to "Archived"
-                new_page_properties = {k: v for k, v in page["properties"].items()}
-                new_page_properties["Status"] = {"status": {"name": "Archived"}}
+                properties_to_copy = {
+                    prop_name: prop_value
+                    for prop_name, prop_value in page["properties"].items()
+                    if prop_value["type"] not in read_only_property_types
+                }
+                properties_to_copy["Status"] = {"status": {"name": "Archived"}}
 
                 notion.pages.create(
                     parent={"database_id": archive_db_id},
-                    properties=new_page_properties,
+                    properties=properties_to_copy,
                 )
-                # Archive (delete) the original page
                 notion.pages.update(page_id=page["id"], archived=True)
                 logger.info(f"Archived and deleted original page {page['id']}.")
             except Exception as e:
@@ -216,8 +222,7 @@ def archive_uploaded_items(source_db_id: str, archive_db_id: str) -> None:
         if response.get("has_more"):
             start_cursor = response.get("next_cursor")
         else:
-            break
-            
+            break            
 
 def main() -> None:
     """Main function to run the sync process."""
