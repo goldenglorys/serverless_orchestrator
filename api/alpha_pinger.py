@@ -1,9 +1,14 @@
-import requests
 import logging
 import json
 from http.server import BaseHTTPRequestHandler
-from typing import Optional
-from utils.notion_supabase_sync import main as sync_data, ping_supabase, ping_second_supabase
+from typing import Dict, Any
+
+from utils.notion_supabase_sync import (
+    main as sync_data,
+    ping_supabase_table,
+    supabase_client,
+    # second_supabase_client,
+)
 from utils.notify import send_telegram_message
 from dotenv import load_dotenv
 
@@ -13,22 +18,27 @@ logging.basicConfig(level=logging.INFO)
 load_dotenv()
 
 
-class AlphaPinger:
-    """Class to ping a website and check its status."""
+def _ping_and_get_status(
+    client: Any, table_name: str, account_name: str
+) -> Dict[str, Any]:
+    """Helper function to ping a Supabase table and return its status."""
+    try:
+        ping_result = ping_supabase_table(client, table_name)
+        if ping_result is None:
+            raise ConnectionError(
+                f"Failed to connect to {account_name} table {table_name}"
+            )
 
-    def __init__(self, url: str) -> None:
-        """Initialize the WebsitePinger with the website URL."""
-        self.url = url
-
-    def get_website_status(self) -> Optional[int]:
-        """Ping the website and return its status code."""
-        try:
-            response = requests.get(self.url)
-            response.raise_for_status()
-            return response.status_code
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Error pinging website {self.url}: {e}")
-            return None
+        return {
+            "status": "success",
+            "records_fetched": len(ping_result),
+        }
+    except Exception as e:
+        logging.error(f"Error pinging {account_name} table '{table_name}': {e}")
+        return {
+            "status": "error",
+            "records_fetched": None,
+        }
 
 
 class handler(BaseHTTPRequestHandler):
@@ -36,48 +46,28 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         """Handle GET requests."""
+        sync_status = "success"
 
-        # Ping Supabase tables
-        try:
-            papers_ping = ping_supabase("papers")
-            papers_status = "success"
-            papers_fetched = len(papers_ping)
-        except Exception as e:
-            logging.error(f"Error pinging Supabase papers table: {e}")
-            papers_status = "error"
-            papers_fetched = None
+        # Ping Supabase tables first
+        papers_status = _ping_and_get_status(supabase_client, "papers", "account_1")
+        links_status = _ping_and_get_status(supabase_client, "links", "account_1")
+        # second_supabase_status = _ping_and_get_status(
+        #     second_supabase_client, "users", "account_2"
+        # )
 
-        try:
-            links_ping = ping_supabase("links")
-            links_status = "success"
-            links_fetched = len(links_ping)
-        except Exception as e:
-            logging.error(f"Error pinging Supabase links table: {e}")
-            links_status = "error"
-            links_fetched = None
-
-        try:
-            second_supabase_ping = ping_second_supabase("users")
-            second_supabase_status = "success"
-            second_supabase_fetched = len(second_supabase_ping)
-        except Exception as e:
-            logging.error(f"Error pinging second Supabase table: {e}")
-            second_supabase_status = "error"
-            second_supabase_fetched = None
-
-        # Run Notion to Supabase sync
+        # Run Notion to Supabase sync. If it fails, stop and report.
         try:
             sync_data()
-            sync_status = "success"
             send_telegram_message(
-                "The Notion to Supabase sync job completed successfully."
+                "✅ The Notion to Supabase sync job completed successfully."
             )
         except Exception as e:
-            logging.error(f"Error syncing data: {e}")
+            logging.error(f"Critical error during data sync: {e}")
             sync_status = "error"
             send_telegram_message(
-                "There was an error in the Notion to Supabase sync job."
+                f"❌ CRITICAL: The Notion to Supabase sync job failed. Error: {e}"
             )
+            # Do not proceed further if sync fails.
 
         self.send_response(200)
         self.send_header("Content-type", "application/json")
@@ -86,19 +76,12 @@ class handler(BaseHTTPRequestHandler):
         response_data = {
             "supabase_ping": {
                 "account_1": {
-                    "papers_table": {
-                        "status": papers_status,
-                        "records_fetched": papers_fetched,
-                    },
-                    "links_table": {
-                        "status": links_status,
-                        "records_fetched": links_fetched,
-                    },
+                    "papers_table": papers_status,
+                    "links_table": links_status,
                 },
-                "account_2": {
-                    "status": second_supabase_status,
-                    "records_fetched": second_supabase_fetched,
-                }
+                # "account_2": {
+                #     "users_table": second_supabase_status,
+                # },
             },
             "notion_supabase_sync": {"status": sync_status},
         }
