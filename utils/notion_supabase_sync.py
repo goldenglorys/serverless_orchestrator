@@ -100,8 +100,9 @@ def update_notion_status_to_uploaded(page_ids: List[str]) -> None:
             raise  # Re-raise to halt the process if an update fails
 
 
-def sync_new_items(config: Dict[str, Any]) -> None:
-    """Fetches new items from Notion, inserts them into Supabase, and updates their status."""
+def sync_new_items(config: Dict[str, Any]) -> int:
+    """Fetches new items from Notion, inserts them into Supabase, and updates their status.
+    Returns the number of items synced."""
     db_id = config["source_db_id"]
     table_name = config["supabase_table"]
     supabase = config["supabase_client"]
@@ -115,11 +116,11 @@ def sync_new_items(config: Dict[str, Any]) -> None:
         )
     except Exception as e:
         logger.error(f"Error querying Notion for new items: {e}")
-        return
+        return 0
 
     if not response["results"]:
         logger.info(f"No new items found for '{config['name']}'.")
-        return
+        return 0
 
     data_to_insert = []
     page_ids_to_update = []
@@ -138,6 +139,8 @@ def sync_new_items(config: Dict[str, Any]) -> None:
             f"Updating {len(page_ids_to_update)} items in Notion to 'Uploaded'."
         )
         update_notion_status_to_uploaded(page_ids_to_update)
+
+        return len(data_to_insert)
 
     except Exception as e:
         logger.error(
@@ -198,9 +201,16 @@ def archive_uploaded_items(config: Dict[str, Any]) -> None:
             )
 
 
-def main() -> None:
-    """Main function to run the sync and archival processes based on SYNC_CONFIG."""
+def main() -> Dict[str, int]:
+    """Main function to run the sync and archival processes based on SYNC_CONFIG.
+    Returns a dictionary with sync statistics."""
     logger.info("--- Starting Notion to Supabase Sync Process ---")
+
+    stats = {
+        "papers_synced": 0,
+        "links_synced": 0
+    }
+
     for config in SYNC_CONFIG:
         if not all(
             k in config for k in ["source_db_id", "supabase_table", "supabase_client"]
@@ -209,10 +219,19 @@ def main() -> None:
                 f"Skipping invalid config for '{config.get('name', 'N/A')}'."
             )
             continue
-        sync_new_items(config)
+
+        synced_count = sync_new_items(config)
+        # Track stats by table name
+        if config["name"] == "papers":
+            stats["papers_synced"] = synced_count
+        elif config["name"] == "links":
+            stats["links_synced"] = synced_count
+
     logger.info("--- Sync Process Completed ---")
 
     logger.info("--- Starting Notion Archival Process ---")
     for config in SYNC_CONFIG:
         archive_uploaded_items(config)
     logger.info("--- Archival Process Completed ---")
+
+    return stats

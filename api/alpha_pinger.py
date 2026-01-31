@@ -7,7 +7,6 @@ from utils.notion_supabase_sync import (
     main as sync_data,
     ping_supabase_table,
     supabase_client,
-    # second_supabase_client,
 )
 from utils.notify import send_telegram_message
 from dotenv import load_dotenv
@@ -51,16 +50,21 @@ class handler(BaseHTTPRequestHandler):
         # Ping Supabase tables first
         papers_status = _ping_and_get_status(supabase_client, "papers", "account_1")
         links_status = _ping_and_get_status(supabase_client, "links", "account_1")
-        # second_supabase_status = _ping_and_get_status(
-        #     second_supabase_client, "users", "account_2"
-        # )
 
         # Run Notion to Supabase sync. If it fails, stop and report.
+        sync_stats = {"papers_synced": 0, "links_synced": 0}
         try:
-            sync_data()
-            send_telegram_message(
-                "✅ The Notion to Supabase sync job completed successfully."
-            )
+            sync_stats = sync_data()
+            total_synced = sync_stats["papers_synced"] + sync_stats["links_synced"]
+
+            message = f"""✅ Notion to Supabase Sync Completed
+
+📊 Sync Statistics:
+  • Papers synced: {sync_stats["papers_synced"]}
+  • Links synced: {sync_stats["links_synced"]}
+  • Total synced: {total_synced}
+"""
+            send_telegram_message(message)
         except Exception as e:
             logging.error(f"Critical error during data sync: {e}")
             sync_status = "error"
@@ -79,9 +83,6 @@ class handler(BaseHTTPRequestHandler):
                     "papers_table": papers_status,
                     "links_table": links_status,
                 },
-                # "account_2": {
-                #     "users_table": second_supabase_status,
-                # },
             },
             "notion_supabase_sync": {"status": sync_status},
         }
