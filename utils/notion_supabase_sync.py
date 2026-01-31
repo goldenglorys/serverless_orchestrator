@@ -15,6 +15,8 @@ from dotenv import load_dotenv
 from notion_client import Client
 from supabase import create_client, Client as SupabaseClient
 from tqdm import tqdm
+from urllib.parse import urlparse
+from datetime import datetime
 
 # Setup logging
 logging.basicConfig(
@@ -42,14 +44,14 @@ SYNC_CONFIG = [
         "name": "papers",
         "source_db_id": os.getenv("PAPERS_DATABASE_ID"),
         "archive_db_id": os.getenv("ARCHIVE_PAPERS_DATABASE_ID"),
-        "supabase_table": "papers",
+        "supabase_table": "scrape",
         "supabase_client": supabase_client,
     },
     {
         "name": "links",
         "source_db_id": os.getenv("LINKS_DATABASE_ID"),
         "archive_db_id": os.getenv("ARCHIVE_LINKS_DATABASE_ID"),
-        "supabase_table": "links",
+        "supabase_table": "scrape",
         "supabase_client": supabase_client,
     },
 ]
@@ -67,25 +69,32 @@ def ping_supabase_table(
         return None
 
 
-def process_notion_item(item: Dict[str, Any], table_name: str) -> Dict[str, Any]:
-    """Extracts relevant data from a Notion item."""
+def process_notion_item(item: Dict[str, Any], config_name: str) -> Dict[str, Any]:
+    """Extracts relevant data from a Notion item for the 'scrape' table."""
     properties = item["properties"]
+    url = properties.get("URL", {}).get("url")
+    domain = urlparse(url).netloc if url else None
+
+    notion_date = properties.get("Date", {}).get("date", {}).get("start")
+    original_date = notion_date if notion_date else datetime.now().strftime('%Y-%m-%d')
+
     data = {
         "title": properties.get("Title", {})
         .get("title", [{}])[0]
         .get("plain_text", ""),
-        "url": properties.get("URL", {}).get("url"),
-        "notion_timestamp": item.get("created_time"),
+        "url": url,
+        "domain": domain,
+        "original_date": original_date,
+        "authors": None, 
     }
-    if table_name == "papers":
-        data["date"] = properties.get("Date", {}).get("date", {}).get("start")
+
+    if config_name == "papers":
         data["authors"] = (
             properties.get("Authors", {})
             .get("rich_text", [{}])[0]
             .get("plain_text", "")
         )
     return data
-
 
 def update_notion_status_to_uploaded(page_ids: List[str]) -> None:
     """Updates the status of Notion pages to 'Uploaded'."""

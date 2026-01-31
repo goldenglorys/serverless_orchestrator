@@ -48,8 +48,9 @@ class handler(BaseHTTPRequestHandler):
         sync_status = "success"
 
         # Ping Supabase tables first
-        papers_status = _ping_and_get_status(supabase_client, "papers", "account_1")
-        links_status = _ping_and_get_status(supabase_client, "links", "account_1")
+        # papers_status = _ping_and_get_status(supabase_client, "papers", "account_1")
+        # links_status = _ping_and_get_status(supabase_client, "links", "account_1")
+        scrape_status = _ping_and_get_status(supabase_client, "scrape", "account_1")
 
         # Run Notion to Supabase sync. If it fails, stop and report.
         sync_stats = {"papers_synced": 0, "links_synced": 0}
@@ -79,10 +80,11 @@ class handler(BaseHTTPRequestHandler):
 
         response_data = {
             "supabase_ping": {
-                "account_1": {
-                    "papers_table": papers_status,
-                    "links_table": links_status,
-                },
+                "scrape_table": scrape_status,
+                # "account_1": {
+                #     "papers_table": papers_status,
+                #     "links_table": links_status,
+                # },
             },
             "notion_supabase_sync": {"status": sync_status},
         }
