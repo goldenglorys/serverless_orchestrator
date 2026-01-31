@@ -13,15 +13,19 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-def fetch_rsrch_links(limit: int = 1000) -> List[Dict[str, Any]]:
+def fetch_rsrch_links(limit: int = None) -> List[Dict[str, Any]]:
     """
-    Fetches top links from rsrch.space and extracts structured data.
-    Limited to prevent timeouts.
+    Fetches links from rsrch.space and extracts structured data.
+    Set limit=None to fetch ALL links, or specify a number to limit.
+    Default is None (no limit).
     """
     import httpx
     from bs4 import BeautifulSoup
 
-    logger.info(f"Fetching top {limit} links from rsrch.space...")
+    if limit is None:
+        logger.info(f"Fetching ALL links from rsrch.space...")
+    else:
+        logger.info(f"Fetching top {limit} links from rsrch.space...")
 
     try:
         response = httpx.get("https://rsrch.space/", timeout=30.0, follow_redirects=True)
@@ -36,8 +40,10 @@ def fetch_rsrch_links(limit: int = 1000) -> List[Dict[str, Any]]:
         # Get current date in YYYY-MM-DD format
         current_date = datetime.now().strftime('%Y-%m-%d')
 
-        # Process only up to the limit
-        for a_tag in link_elements[:limit]:
+        # Process with or without limit
+        elements_to_process = link_elements if limit is None else link_elements[:limit]
+
+        for a_tag in elements_to_process:
             href = a_tag.get('href', '')
 
             # Skip internal navigation links and empty hrefs
@@ -273,10 +279,20 @@ class handler(BaseHTTPRequestHandler):
         """Handle GET requests."""
 
         try:
+            # Parse query parameters for limit
+            from urllib.parse import urlparse, parse_qs
+            parsed_url = urlparse(self.path)
+            query_params = parse_qs(parsed_url.query)
+
+            # Get limit from query params (default: None = no limit)
+            # Use limit=1000 for cron job to prevent timeouts
+            limit_param = query_params.get('limit', [None])[0]
+            limit = int(limit_param) if limit_param else 1000
+
             logger.info("Starting rsrch.space scraping and sync process...")
 
-            # Step 1: Fetch ALL links from rsrch.space
-            scraped_links = fetch_rsrch_links()
+            # Step 1: Fetch links from rsrch.space (with or without limit)
+            scraped_links = fetch_rsrch_links(limit=limit)
 
             # Step 2: Get existing URLs from Supabase
             existing_urls = get_existing_urls_from_supabase()
