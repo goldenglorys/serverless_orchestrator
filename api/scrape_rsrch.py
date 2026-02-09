@@ -172,6 +172,61 @@ def send_sync_notification(
         logger.error(f"Error sending Telegram notification: {e}")
 
 
+def run_scrape_and_sync(limit: int = 1000) -> Dict[str, Any]:
+    """
+    Main function to run the scraping and syncing process.
+    Can be called from other modules.
+
+    Args:
+        limit: Maximum number of links to fetch (default: 1000)
+
+    Returns:
+        Dict with scraping and sync statistics
+    """
+    try:
+        logger.info("Starting rsrch.space scraping and sync process...")
+
+        # Step 1: Fetch links from rsrch.space (with or without limit)
+        scraped_links = fetch_rsrch_links(limit=limit)
+
+        # Step 2: Get existing URLs from Supabase
+        existing_urls = get_existing_urls_from_supabase()
+
+        # Step 3: Filter duplicates
+        unique_links = []
+        duplicate_count = 0
+        for link in scraped_links:
+            url = link.get("url")
+            if url and url not in existing_urls:
+                unique_links.append(link)
+            else:
+                duplicate_count += 1
+
+        logger.info(
+            f"Found {len(unique_links)} unique links, {duplicate_count} duplicates"
+        )
+
+        # Step 4: Categorize and sync to Supabase
+        sync_stats = categorize_and_sync_links(unique_links)
+
+        # Step 5: Send Telegram notification
+        send_sync_notification(sync_stats, len(scraped_links), duplicate_count)
+
+        # Return statistics
+        return {
+            "status": "success",
+            "total_scraped": len(scraped_links),
+            "total_existing_in_db": len(existing_urls),
+            "total_duplicates": duplicate_count,
+            "total_unique": len(unique_links),
+            "sync_stats": sync_stats,
+        }
+
+    except Exception as e:
+        logger.error(f"Error in scrape_rsrch process: {e}")
+        return {"status": "error", "error": str(e)}
+
+
 class handler(BaseHTTPRequestHandler):
     """Handler for scraping rsrch.space and syncing to Supabase."""
 
@@ -190,43 +245,8 @@ class handler(BaseHTTPRequestHandler):
             limit_param = query_params.get("limit", [None])[0]
             limit = int(limit_param) if limit_param else 1000
 
-            logger.info("Starting rsrch.space scraping and sync process...")
-
-            # Step 1: Fetch links from rsrch.space (with or without limit)
-            scraped_links = fetch_rsrch_links(limit=limit)
-
-            # Step 2: Get existing URLs from Supabase
-            existing_urls = get_existing_urls_from_supabase()
-
-            # Step 3: Filter duplicates
-            unique_links = []
-            duplicate_count = 0
-            for link in scraped_links:
-                url = link.get("url")
-                if url and url not in existing_urls:
-                    unique_links.append(link)
-                else:
-                    duplicate_count += 1
-
-            logger.info(
-                f"Found {len(unique_links)} unique links, {duplicate_count} duplicates"
-            )
-
-            # Step 4: Categorize and sync to Supabase
-            sync_stats = categorize_and_sync_links(unique_links)
-
-            # Step 5: Send Telegram notification
-            send_sync_notification(sync_stats, len(scraped_links), duplicate_count)
-
-            # Prepare response
-            response_data = {
-                "status": "success",
-                "total_scraped": len(scraped_links),
-                "total_existing_in_db": len(existing_urls),
-                "total_duplicates": duplicate_count,
-                "total_unique": len(unique_links),
-                "sync_stats": sync_stats,
-            }
+            # Run the scraping and syncing process
+            response_data = run_scrape_and_sync(limit=limit)
 
             self.send_response(200)
             self.send_header("Content-type", "application/json")

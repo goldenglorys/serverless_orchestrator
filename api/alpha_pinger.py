@@ -11,6 +11,14 @@ from utils.notion_supabase_sync import (
 from utils.notify import send_telegram_message
 from dotenv import load_dotenv
 
+# Import the scraping function from scrape_rsrch
+import sys
+import os
+
+# Add the api directory to path to allow importing scrape_rsrch
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from scrape_rsrch import run_scrape_and_sync
+
 logging.basicConfig(level=logging.INFO)
 
 # Load environment variables
@@ -74,6 +82,19 @@ class handler(BaseHTTPRequestHandler):
             )
             # Do not proceed further if sync fails.
 
+        # Run rsrch.space scraping and syncing
+        scrape_rsrch_stats = {"status": "not_run"}
+        try:
+            logging.info("Starting rsrch.space scraping process...")
+            scrape_rsrch_stats = run_scrape_and_sync(limit=1000)
+            logging.info(f"rsrch.space scraping completed: {scrape_rsrch_stats.get('status')}")
+        except Exception as e:
+            logging.error(f"Error during rsrch.space scraping: {e}")
+            scrape_rsrch_stats = {"status": "error", "error": str(e)}
+            send_telegram_message(
+                f"⚠️ rsrch.space scraping failed. Error: {e}"
+            )
+
         self.send_response(200)
         self.send_header("Content-type", "application/json")
         self.end_headers()
@@ -86,7 +107,8 @@ class handler(BaseHTTPRequestHandler):
                 #     "links_table": links_status,
                 # },
             },
-            "notion_supabase_sync": {"status": sync_status},
+            "notion_supabase_sync": {"status": sync_status, "stats": sync_stats},
+            "rsrch_space_scraping": scrape_rsrch_stats,
         }
 
         self.wfile.write(json.dumps(response_data).encode())

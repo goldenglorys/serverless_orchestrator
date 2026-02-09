@@ -3,10 +3,6 @@
     {
       "path": "/api/alpha_pinger",
       "schedule": "0 1 * * *"
-    },
-    {
-      "path": "/api/scrape_rsrch",
-      "schedule": "0 2 * * *"
     }
   ]
 }
