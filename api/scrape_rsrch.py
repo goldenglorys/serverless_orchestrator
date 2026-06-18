@@ -156,7 +156,7 @@ def send_sync_notification(
     """
     from utils.notify import send_telegram_message
 
-    message = f"""🔄 rsrch.space Sync Completed
+    message = f"""🔄 rsrch space Sync Completed
 
 📊 Scraping Stats:
   • Links Scraped: {total_scraped}
